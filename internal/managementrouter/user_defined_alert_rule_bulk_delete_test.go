@@ -55,8 +55,8 @@ var _ = Describe("BulkDeleteUserDefinedAlertRules", func() {
 			"platform-namespace-1/platform-pr": &platformPR,
 		})
 
-		mockNSInformer := &testutils.MockNamespaceInformerInterface{}
-		mockNSInformer.SetMonitoringNamespaces(map[string]bool{
+		mockNS := &testutils.MockNamespaceInterface{}
+		mockNS.SetMonitoringNamespaces(map[string]bool{
 			"platform-namespace-1": true,
 			"platform-namespace-2": true,
 		})
@@ -64,8 +64,8 @@ var _ = Describe("BulkDeleteUserDefinedAlertRules", func() {
 			PrometheusRulesFunc: func() k8s.PrometheusRuleInterface {
 				return mockK8sRules
 			},
-			NamespaceInformerFunc: func() k8s.NamespaceInformerInterface {
-				return mockNSInformer
+			NamespaceFunc: func() k8s.NamespaceInterface {
+				return mockNS
 			},
 		}
 

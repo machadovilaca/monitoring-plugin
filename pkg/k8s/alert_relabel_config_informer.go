@@ -13,7 +13,7 @@ type alertRelabelConfigInformer struct {
 	informer cache.SharedIndexInformer
 }
 
-func newAlertRelabelConfigInformer(clientset *osmv1client.Clientset) AlertRelabelConfigInformerInterface {
+func newAlertRelabelConfigInformer(ctx context.Context, clientset *osmv1client.Clientset) (*alertRelabelConfigInformer, error) {
 	informer := cache.NewSharedIndexInformer(
 		alertRelabelConfigListWatchForAllNamespaces(clientset),
 		&osmv1.AlertRelabelConfig{},
@@ -21,16 +21,24 @@ func newAlertRelabelConfigInformer(clientset *osmv1client.Clientset) AlertRelabe
 		cache.Indexers{},
 	)
 
-	return &alertRelabelConfigInformer{
+	arci := &alertRelabelConfigInformer{
 		informer: informer,
 	}
+
+	go arci.informer.Run(ctx.Done())
+
+	cache.WaitForNamedCacheSync("AlertRelabelConfig informer", ctx.Done(),
+		arci.informer.HasSynced,
+	)
+
+	return arci, nil
 }
 
 func alertRelabelConfigListWatchForAllNamespaces(clientset *osmv1client.Clientset) *cache.ListWatch {
 	return cache.NewListWatchFromClient(clientset.MonitoringV1().RESTClient(), "alertrelabelconfigs", "", fields.Everything())
 }
 
-func (arci *alertRelabelConfigInformer) Run(ctx context.Context, callbacks AlertRelabelConfigInformerCallback) error {
+func (arci *alertRelabelConfigInformer) AddCallbacks(callbacks AlertRelabelConfigInformerCallback) error {
 	_, err := arci.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			arc, ok := obj.(*osmv1.AlertRelabelConfig)
@@ -55,31 +63,5 @@ func (arci *alertRelabelConfigInformer) Run(ctx context.Context, callbacks Alert
 		},
 	})
 
-	go arci.informer.Run(ctx.Done())
-
-	cache.WaitForNamedCacheSync("AlertRelabelConfig informer", ctx.Done(),
-		arci.informer.HasSynced,
-	)
-
 	return err
-}
-
-func (arci *alertRelabelConfigInformer) List(ctx context.Context, namespace string) ([]osmv1.AlertRelabelConfig, error) {
-	arcs := arci.informer.GetStore().List()
-
-	alertRelabelConfigs := make([]osmv1.AlertRelabelConfig, 0, len(arcs))
-	for _, arc := range arcs {
-		alertRelabelConfigs = append(alertRelabelConfigs, *arc.(*osmv1.AlertRelabelConfig))
-	}
-
-	return alertRelabelConfigs, nil
-}
-
-func (arci *alertRelabelConfigInformer) Get(ctx context.Context, namespace string, name string) (*osmv1.AlertRelabelConfig, bool, error) {
-	arc, exists, err := arci.informer.GetStore().GetByKey(namespace + "/" + name)
-	if err != nil {
-		return nil, exists, err
-	}
-
-	return arc.(*osmv1.AlertRelabelConfig), exists, nil
 }

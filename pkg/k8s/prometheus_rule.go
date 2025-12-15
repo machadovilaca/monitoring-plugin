@@ -12,14 +12,14 @@ import (
 )
 
 type prometheusRuleManager struct {
-	clientset *monitoringv1client.Clientset
-	informer  PrometheusRuleInformerInterface
+	clientset              *monitoringv1client.Clientset
+	prometheusRuleInformer *prometheusRuleInformer
 }
 
-func newPrometheusRuleManager(clientset *monitoringv1client.Clientset, informer PrometheusRuleInformerInterface) PrometheusRuleInterface {
+func newPrometheusRuleManager(clientset *monitoringv1client.Clientset, informer *prometheusRuleInformer) *prometheusRuleManager {
 	return &prometheusRuleManager{
-		clientset: clientset,
-		informer:  informer,
+		clientset:              clientset,
+		prometheusRuleInformer: informer,
 	}
 }
 
@@ -33,12 +33,20 @@ func (prm *prometheusRuleManager) List(ctx context.Context, namespace string) ([
 }
 
 func (prm *prometheusRuleManager) Get(ctx context.Context, namespace string, name string) (*monitoringv1.PrometheusRule, bool, error) {
-	pr, exists, err := prm.informer.Get(ctx, namespace, name)
+	item, exists, err := prm.prometheusRuleInformer.informer.GetStore().GetByKey(namespace + "/" + name)
 	if err != nil {
-		return nil, exists, fmt.Errorf("failed to get PrometheusRule %s/%s: %w", namespace, name, err)
+		return nil, false, err
+	}
+	if !exists {
+		return nil, false, nil
 	}
 
-	return pr, exists, nil
+	pr, ok := item.(*monitoringv1.PrometheusRule)
+	if !ok {
+		return nil, false, nil
+	}
+
+	return pr, true, nil
 }
 
 func (prm *prometheusRuleManager) Update(ctx context.Context, pr monitoringv1.PrometheusRule) error {

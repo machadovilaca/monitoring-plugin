@@ -24,7 +24,7 @@ type namespaceInformer struct {
 	mu                   sync.RWMutex
 }
 
-func newNamespaceInformer(ctx context.Context, clientset kubernetes.Interface) (NamespaceInformerInterface, error) {
+func newNamespaceInformer(ctx context.Context, clientset kubernetes.Interface) (*namespaceInformer, error) {
 	informer := cache.NewSharedIndexInformer(
 		namespaceListWatch(clientset.CoreV1()),
 		&corev1.Namespace{},
@@ -81,7 +81,7 @@ func namespaceListWatch(client corev1client.CoreV1Interface) *cache.ListWatch {
 	)
 }
 
-func (ni *namespaceInformer) IsClusterMonitoringNamespace(name string) bool {
+func (ni *namespaceInformer) isClusterMonitoringNamespace(name string) bool {
 	ni.mu.RLock()
 	defer ni.mu.RUnlock()
 	return ni.monitoringNamespaces[name]

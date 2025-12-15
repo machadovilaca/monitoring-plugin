@@ -29,8 +29,8 @@ var _ = Describe("CreateUserDefinedAlertRule", func() {
 		ctx = context.Background()
 
 		mockPR = &testutils.MockPrometheusRuleInterface{}
-		mockNSInformer := &testutils.MockNamespaceInformerInterface{}
-		mockNSInformer.SetMonitoringNamespaces(map[string]bool{
+		mockNS := &testutils.MockNamespaceInterface{}
+		mockNS.SetMonitoringNamespaces(map[string]bool{
 			"platform-namespace-1": true,
 			"platform-namespace-2": true,
 		})
@@ -38,8 +38,8 @@ var _ = Describe("CreateUserDefinedAlertRule", func() {
 			PrometheusRulesFunc: func() k8s.PrometheusRuleInterface {
 				return mockPR
 			},
-			NamespaceInformerFunc: func() k8s.NamespaceInformerInterface {
-				return mockNSInformer
+			NamespaceFunc: func() k8s.NamespaceInterface {
+				return mockNS
 			},
 		}
 		mockMapper = &testutils.MockMapperClient{}

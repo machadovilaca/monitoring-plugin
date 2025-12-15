@@ -32,8 +32,8 @@ var _ = Describe("UpdatePlatformAlertRule", func() {
 
 		mockPR = &testutils.MockPrometheusRuleInterface{}
 		mockARC = &testutils.MockAlertRelabelConfigInterface{}
-		mockNSInformer := &testutils.MockNamespaceInformerInterface{}
-		mockNSInformer.SetMonitoringNamespaces(map[string]bool{
+		mockNS := &testutils.MockNamespaceInterface{}
+		mockNS.SetMonitoringNamespaces(map[string]bool{
 			"platform-namespace-1": true,
 			"platform-namespace-2": true,
 		})
@@ -44,8 +44,8 @@ var _ = Describe("UpdatePlatformAlertRule", func() {
 			AlertRelabelConfigsFunc: func() k8s.AlertRelabelConfigInterface {
 				return mockARC
 			},
-			NamespaceInformerFunc: func() k8s.NamespaceInformerInterface {
-				return mockNSInformer
+			NamespaceFunc: func() k8s.NamespaceInterface {
+				return mockNS
 			},
 		}
 		mockMapper = &testutils.MockMapperClient{}

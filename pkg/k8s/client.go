@@ -19,15 +19,16 @@ type client struct {
 	osmv1clientset        *osmv1client.Clientset
 	config                *rest.Config
 
-	prometheusAlerts PrometheusAlertsInterface
+	prometheusAlerts *prometheusAlerts
 
-	prometheusRuleManager  PrometheusRuleInterface
-	prometheusRuleInformer PrometheusRuleInformerInterface
+	prometheusRuleManager  *prometheusRuleManager
+	prometheusRuleInformer *prometheusRuleInformer
 
-	alertRelabelConfigManager  AlertRelabelConfigInterface
-	alertRelabelConfigInformer AlertRelabelConfigInformerInterface
+	alertRelabelConfigManager  *alertRelabelConfigManager
+	alertRelabelConfigInformer *alertRelabelConfigInformer
 
-	namespaceInformer NamespaceInformerInterface
+	namespaceManager  *namespaceManager
+	namespaceInformer *namespaceInformer
 }
 
 func newClient(ctx context.Context, config *rest.Config) (Client, error) {
@@ -55,17 +56,26 @@ func newClient(ctx context.Context, config *rest.Config) (Client, error) {
 
 	c.prometheusAlerts = newPrometheusAlerts(clientset, config)
 
-	c.prometheusRuleInformer = newPrometheusRuleInformer(monitoringv1clientset)
+	pri, err := newPrometheusRuleInformer(ctx, monitoringv1clientset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create prometheus rule informer: %w", err)
+	}
+	c.prometheusRuleInformer = pri
 	c.prometheusRuleManager = newPrometheusRuleManager(monitoringv1clientset, c.prometheusRuleInformer)
 
-	c.alertRelabelConfigInformer = newAlertRelabelConfigInformer(osmv1clientset)
-	c.alertRelabelConfigManager = newAlertRelabelConfigManager(osmv1clientset, c.alertRelabelConfigInformer)
+	arci, err := newAlertRelabelConfigInformer(ctx, osmv1clientset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create alert relabel config informer: %w", err)
+	}
+	c.alertRelabelConfigInformer = arci
+	c.alertRelabelConfigManager = newAlertRelabelConfigManager(osmv1clientset, arci)
 
-	namespaceInformer, err := newNamespaceInformer(ctx, clientset)
+	ni, err := newNamespaceInformer(ctx, clientset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create namespace informer: %w", err)
 	}
-	c.namespaceInformer = namespaceInformer
+	c.namespaceInformer = ni
+	c.namespaceManager = newNamespaceManager(ni)
 
 	return c, nil
 }
@@ -98,6 +108,6 @@ func (c *client) AlertRelabelConfigInformer() AlertRelabelConfigInformerInterfac
 	return c.alertRelabelConfigInformer
 }
 
-func (c *client) NamespaceInformer() NamespaceInformerInterface {
-	return c.namespaceInformer
+func (c *client) Namespace() NamespaceInterface {
+	return c.namespaceManager
 }

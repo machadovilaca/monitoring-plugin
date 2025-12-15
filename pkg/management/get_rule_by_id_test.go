@@ -23,7 +23,7 @@ var _ = Describe("GetRuleById", func() {
 		ctx        context.Context
 		mockK8s    *testutils.MockClient
 		mockPR     *testutils.MockPrometheusRuleInterface
-		mockNS     *testutils.MockNamespaceInformerInterface
+		mockNS     *testutils.MockNamespaceInterface
 		mockMapper *testutils.MockMapperClient
 		client     management.Client
 	)
@@ -32,7 +32,7 @@ var _ = Describe("GetRuleById", func() {
 		ctx = context.Background()
 
 		mockPR = &testutils.MockPrometheusRuleInterface{}
-		mockNS = &testutils.MockNamespaceInformerInterface{}
+		mockNS = &testutils.MockNamespaceInterface{}
 		mockNS.SetMonitoringNamespaces(map[string]bool{
 			"monitoring": true,
 		})
@@ -40,7 +40,7 @@ var _ = Describe("GetRuleById", func() {
 			PrometheusRulesFunc: func() k8s.PrometheusRuleInterface {
 				return mockPR
 			},
-			NamespaceInformerFunc: func() k8s.NamespaceInformerInterface {
+			NamespaceFunc: func() k8s.NamespaceInterface {
 				return mockNS
 			},
 		}

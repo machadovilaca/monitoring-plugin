@@ -10,23 +10,47 @@ import (
 )
 
 type alertRelabelConfigManager struct {
-	clientset *osmv1client.Clientset
-	informer  AlertRelabelConfigInformerInterface
+	clientset                  *osmv1client.Clientset
+	alertRelabelConfigInformer *alertRelabelConfigInformer
 }
 
-func newAlertRelabelConfigManager(clientset *osmv1client.Clientset, informer AlertRelabelConfigInformerInterface) AlertRelabelConfigInterface {
+func newAlertRelabelConfigManager(clientset *osmv1client.Clientset, informer *alertRelabelConfigInformer) *alertRelabelConfigManager {
 	return &alertRelabelConfigManager{
-		clientset: clientset,
-		informer:  informer,
+		clientset:                  clientset,
+		alertRelabelConfigInformer: informer,
 	}
 }
 
 func (arcm *alertRelabelConfigManager) List(ctx context.Context, namespace string) ([]osmv1.AlertRelabelConfig, error) {
-	return arcm.informer.List(ctx, namespace)
+	arcs := arcm.alertRelabelConfigInformer.informer.GetStore().List()
+
+	alertRelabelConfigs := make([]osmv1.AlertRelabelConfig, 0, len(arcs))
+	for _, item := range arcs {
+		arc, ok := item.(*osmv1.AlertRelabelConfig)
+		if !ok {
+			continue
+		}
+		alertRelabelConfigs = append(alertRelabelConfigs, *arc)
+	}
+
+	return alertRelabelConfigs, nil
 }
 
 func (arcm *alertRelabelConfigManager) Get(ctx context.Context, namespace string, name string) (*osmv1.AlertRelabelConfig, bool, error) {
-	return arcm.informer.Get(ctx, namespace, name)
+	item, exists, err := arcm.alertRelabelConfigInformer.informer.GetStore().GetByKey(namespace + "/" + name)
+	if err != nil {
+		return nil, false, err
+	}
+	if !exists {
+		return nil, false, nil
+	}
+
+	arc, ok := item.(*osmv1.AlertRelabelConfig)
+	if !ok {
+		return nil, false, nil
+	}
+
+	return arc, true, nil
 }
 
 func (arcm *alertRelabelConfigManager) Create(ctx context.Context, arc osmv1.AlertRelabelConfig) (*osmv1.AlertRelabelConfig, error) {

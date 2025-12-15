@@ -107,9 +107,9 @@ func (m *mapper) WatchPrometheusRules(ctx context.Context) {
 			},
 		}
 
-		err := m.k8sClient.PrometheusRuleInformer().Run(ctx, callbacks)
+		err := m.k8sClient.PrometheusRuleInformer().AddCallbacks(callbacks)
 		if err != nil {
-			log.Fatalf("Failed to run PrometheusRule informer: %v", err)
+			log.Fatalf("Failed to add PrometheusRule callbacks: %v", err)
 		}
 	}()
 }
@@ -157,9 +157,9 @@ func (m *mapper) WatchAlertRelabelConfigs(ctx context.Context) {
 			},
 		}
 
-		err := m.k8sClient.AlertRelabelConfigInformer().Run(ctx, callbacks)
+		err := m.k8sClient.AlertRelabelConfigInformer().AddCallbacks(callbacks)
 		if err != nil {
-			log.Fatalf("Failed to run AlertRelabelConfig informer: %v", err)
+			log.Fatalf("Failed to add AlertRelabelConfig callbacks: %v", err)
 		}
 	}()
 }

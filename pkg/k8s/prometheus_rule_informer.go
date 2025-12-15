@@ -13,7 +13,7 @@ type prometheusRuleInformer struct {
 	informer cache.SharedIndexInformer
 }
 
-func newPrometheusRuleInformer(clientset *monitoringv1client.Clientset) PrometheusRuleInformerInterface {
+func newPrometheusRuleInformer(ctx context.Context, clientset *monitoringv1client.Clientset) (*prometheusRuleInformer, error) {
 	informer := cache.NewSharedIndexInformer(
 		prometheusRuleListWatchForAllNamespaces(clientset),
 		&monitoringv1.PrometheusRule{},
@@ -21,16 +21,24 @@ func newPrometheusRuleInformer(clientset *monitoringv1client.Clientset) Promethe
 		cache.Indexers{},
 	)
 
-	return &prometheusRuleInformer{
+	pri := &prometheusRuleInformer{
 		informer: informer,
 	}
+
+	go pri.informer.Run(ctx.Done())
+
+	cache.WaitForNamedCacheSync("PrometheusRule informer", ctx.Done(),
+		pri.informer.HasSynced,
+	)
+
+	return pri, nil
 }
 
 func prometheusRuleListWatchForAllNamespaces(clientset *monitoringv1client.Clientset) *cache.ListWatch {
 	return cache.NewListWatchFromClient(clientset.MonitoringV1().RESTClient(), "prometheusrules", "", fields.Everything())
 }
 
-func (pri *prometheusRuleInformer) Run(ctx context.Context, callbacks PrometheusRuleInformerCallback) error {
+func (pri *prometheusRuleInformer) AddCallbacks(callbacks PrometheusRuleInformerCallback) error {
 	_, err := pri.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			pr, ok := obj.(*monitoringv1.PrometheusRule)
@@ -56,31 +64,5 @@ func (pri *prometheusRuleInformer) Run(ctx context.Context, callbacks Prometheus
 		},
 	})
 
-	go pri.informer.Run(ctx.Done())
-
-	cache.WaitForNamedCacheSync("PrometheusRule informer", ctx.Done(),
-		pri.informer.HasSynced,
-	)
-
 	return err
-}
-
-func (pri *prometheusRuleInformer) List(ctx context.Context, namespace string) ([]monitoringv1.PrometheusRule, error) {
-	prs := pri.informer.GetStore().List()
-
-	prometheusRules := make([]monitoringv1.PrometheusRule, 0, len(prs))
-	for _, pr := range prs {
-		prometheusRules = append(prometheusRules, *pr.(*monitoringv1.PrometheusRule))
-	}
-
-	return prometheusRules, nil
-}
-
-func (pri *prometheusRuleInformer) Get(ctx context.Context, namespace string, name string) (*monitoringv1.PrometheusRule, bool, error) {
-	pr, exists, err := pri.informer.GetStore().GetByKey(namespace + "/" + name)
-	if err != nil {
-		return nil, exists, err
-	}
-
-	return pr.(*monitoringv1.PrometheusRule), exists, nil
 }

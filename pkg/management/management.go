@@ -13,5 +13,5 @@ type client struct {
 }
 
 func (c *client) IsPlatformAlertRule(prId types.NamespacedName) bool {
-	return c.k8sClient.NamespaceInformer().IsClusterMonitoringNamespace(prId.Namespace)
+	return c.k8sClient.Namespace().IsClusterMonitoringNamespace(prId.Namespace)
 }

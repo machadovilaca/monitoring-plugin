@@ -36,8 +36,8 @@ type Client interface {
 	// AlertRelabelConfigInformer returns the AlertRelabelConfigInformer interface
 	AlertRelabelConfigInformer() AlertRelabelConfigInformerInterface
 
-	// NamespaceInformer returns the NamespaceInformer interface
-	NamespaceInformer() NamespaceInformerInterface
+	// Namespace returns the Namespace interface
+	Namespace() NamespaceInterface
 }
 
 // PrometheusAlertsInterface defines operations for managing PrometheusAlerts
@@ -66,14 +66,8 @@ type PrometheusRuleInterface interface {
 
 // PrometheusRuleInformerInterface defines operations for PrometheusRules informers
 type PrometheusRuleInformerInterface interface {
-	// Run starts the informer and sets up the provided callbacks for add, update, and delete events
-	Run(ctx context.Context, callbacks PrometheusRuleInformerCallback) error
-
-	// List lists all PrometheusRules in the cluster
-	List(ctx context.Context, namespace string) ([]monitoringv1.PrometheusRule, error)
-
-	// Get retrieves a PrometheusRule by namespace and name
-	Get(ctx context.Context, namespace string, name string) (*monitoringv1.PrometheusRule, bool, error)
+	// AddCallbacks adds the provided callbacks for add, update, and delete events
+	AddCallbacks(callbacks PrometheusRuleInformerCallback) error
 }
 
 // PrometheusRuleInformerCallback holds the callback functions for informer events
@@ -108,14 +102,8 @@ type AlertRelabelConfigInterface interface {
 
 // AlertRelabelConfigInformerInterface defines operations for AlertRelabelConfig informers
 type AlertRelabelConfigInformerInterface interface {
-	// Run starts the informer and sets up the provided callbacks for add, update, and delete events
-	Run(ctx context.Context, callbacks AlertRelabelConfigInformerCallback) error
-
-	// List lists all AlertRelabelConfigs in the cluster
-	List(ctx context.Context, namespace string) ([]osmv1.AlertRelabelConfig, error)
-
-	// Get retrieves an AlertRelabelConfig by namespace and name
-	Get(ctx context.Context, namespace string, name string) (*osmv1.AlertRelabelConfig, bool, error)
+	// AddCallbacks adds the provided callbacks for add, update, and delete events
+	AddCallbacks(callbacks AlertRelabelConfigInformerCallback) error
 }
 
 // AlertRelabelConfigInformerCallback holds the callback functions for informer events
@@ -130,8 +118,8 @@ type AlertRelabelConfigInformerCallback struct {
 	OnDelete func(key cache.ObjectName)
 }
 
-// NamespaceInformerInterface defines operations for Namespace informers
-type NamespaceInformerInterface interface {
+// NamespaceInterface defines operations for Namespaces
+type NamespaceInterface interface {
 	// IsClusterMonitoringNamespace checks if a namespace has the openshift.io/cluster-monitoring=true label
 	IsClusterMonitoringNamespace(name string) bool
 }
