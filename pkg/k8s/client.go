@@ -104,10 +104,6 @@ func (c *client) AlertRelabelConfigs() AlertRelabelConfigInterface {
 	return c.alertRelabelConfigManager
 }
 
-func (c *client) AlertRelabelConfigInformer() AlertRelabelConfigInformerInterface {
-	return c.alertRelabelConfigInformer
-}
-
 func (c *client) Namespace() NamespaceInterface {
 	return c.namespaceManager
 }

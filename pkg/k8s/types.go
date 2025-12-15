@@ -5,6 +5,7 @@ import (
 
 	osmv1 "github.com/openshift/api/monitoring/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"github.com/prometheus/prometheus/model/relabel"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
 )
@@ -32,9 +33,6 @@ type Client interface {
 
 	// AlertRelabelConfigs returns the AlertRelabelConfig interface
 	AlertRelabelConfigs() AlertRelabelConfigInterface
-
-	// AlertRelabelConfigInformer returns the AlertRelabelConfigInformer interface
-	AlertRelabelConfigInformer() AlertRelabelConfigInformerInterface
 
 	// Namespace returns the Namespace interface
 	Namespace() NamespaceInterface
@@ -98,24 +96,9 @@ type AlertRelabelConfigInterface interface {
 
 	// Delete deletes an AlertRelabelConfig by namespace and name
 	Delete(ctx context.Context, namespace string, name string) error
-}
 
-// AlertRelabelConfigInformerInterface defines operations for AlertRelabelConfig informers
-type AlertRelabelConfigInformerInterface interface {
-	// AddCallbacks adds the provided callbacks for add, update, and delete events
-	AddCallbacks(callbacks AlertRelabelConfigInformerCallback) error
-}
-
-// AlertRelabelConfigInformerCallback holds the callback functions for informer events
-type AlertRelabelConfigInformerCallback struct {
-	// OnAdd is called when a new AlertRelabelConfig is added
-	OnAdd func(arc *osmv1.AlertRelabelConfig)
-
-	// OnUpdate is called when an existing AlertRelabelConfig is updated
-	OnUpdate func(arc *osmv1.AlertRelabelConfig)
-
-	// OnDelete is called when an AlertRelabelConfig is deleted
-	OnDelete func(key cache.ObjectName)
+	// GetRelabelConfigs retrieves the relabel configs for an AlertRelabelConfig
+	GetRelabelConfigs(ctx context.Context) ([]*relabel.Config, error)
 }
 
 // NamespaceInterface defines operations for Namespaces

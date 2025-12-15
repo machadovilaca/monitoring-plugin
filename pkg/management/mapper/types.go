@@ -3,7 +3,6 @@ package mapper
 import (
 	"context"
 
-	osmv1 "github.com/openshift/api/monitoring/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
@@ -34,16 +33,4 @@ type Client interface {
 
 	// DeletePrometheusRule removes a PrometheusRule from the mapper.
 	DeletePrometheusRule(key cache.ObjectName)
-
-	// WatchAlertRelabelConfigs starts watching for changes to AlertRelabelConfigs.
-	WatchAlertRelabelConfigs(ctx context.Context)
-
-	// AddAlertRelabelConfig adds or updates an AlertRelabelConfig in the mapper.
-	AddAlertRelabelConfig(arc *osmv1.AlertRelabelConfig)
-
-	// DeleteAlertRelabelConfig removes an AlertRelabelConfig from the mapper.
-	DeleteAlertRelabelConfig(key cache.ObjectName)
-
-	// GetAlertRelabelConfigSpec returns the RelabelConfigs that match the given alert rule's labels.
-	GetAlertRelabelConfigSpec(alertRule *monitoringv1.Rule) []osmv1.RelabelConfig
 }

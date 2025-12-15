@@ -7,8 +7,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	osmv1 "github.com/openshift/api/monitoring/v1"
-	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/relabel"
 
 	"github.com/openshift/monitoring-plugin/pkg/k8s"
 	"github.com/openshift/monitoring-plugin/pkg/management"
@@ -45,7 +45,13 @@ var _ = Describe("GetAlerts", func() {
 			{Labels: map[string]string{"alertname": "HighCPU", "severity": "warning"}, State: "firing", ActiveAt: testTime},
 			{Labels: map[string]string{"alertname": "HighMemory", "severity": "critical"}, State: "pending", ActiveAt: testTime},
 		})
-		mockMapper.GetAlertRelabelConfigSpecFunc = func(*monitoringv1.Rule) []osmv1.RelabelConfig { return nil }
+		mockK8s.AlertRelabelConfigsFunc = func() k8s.AlertRelabelConfigInterface {
+			return &testutils.MockAlertRelabelConfigInterface{
+				GetRelabelConfigsFunc: func(ctx context.Context) ([]*relabel.Config, error) {
+					return []*relabel.Config{}, nil
+				},
+			}
+		}
 
 		result, err := client.GetAlerts(ctx, k8s.GetAlertsRequest{})
 
@@ -62,11 +68,19 @@ var _ = Describe("GetAlerts", func() {
 				State:  "firing",
 			},
 		})
-		mockMapper.GetAlertRelabelConfigSpecFunc = func(rule *monitoringv1.Rule) []osmv1.RelabelConfig {
-			return []osmv1.RelabelConfig{
-				{TargetLabel: "severity", Replacement: "critical", Action: "Replace"},
-				{TargetLabel: "team", Replacement: "infrastructure", Action: "Replace"},
-				{TargetLabel: "reviewed", Replacement: "true", Action: "Replace"},
+		mockK8s.AlertRelabelConfigsFunc = func() k8s.AlertRelabelConfigInterface {
+			return &testutils.MockAlertRelabelConfigInterface{
+				GetRelabelConfigsFunc: func(ctx context.Context) ([]*relabel.Config, error) {
+					sourceLabels := []model.LabelName{"alertname"}
+					regex := relabel.MustNewRegexp("TestAlert")
+					nameValidationScheme := model.ValidationScheme(model.UTF8Validation)
+
+					return []*relabel.Config{
+						{SourceLabels: sourceLabels, Regex: regex, TargetLabel: "severity", Replacement: "critical", Action: relabel.Replace, NameValidationScheme: nameValidationScheme},
+						{SourceLabels: sourceLabels, Regex: regex, TargetLabel: "team", Replacement: "infrastructure", Action: relabel.Replace, NameValidationScheme: nameValidationScheme},
+						{SourceLabels: sourceLabels, Regex: regex, TargetLabel: "reviewed", Replacement: "true", Action: relabel.Replace, NameValidationScheme: nameValidationScheme},
+					}, nil
+				},
 			}
 		}
 
@@ -84,11 +98,18 @@ var _ = Describe("GetAlerts", func() {
 			{Labels: map[string]string{"alertname": "KeepAlert", "severity": "warning"}, State: "firing", ActiveAt: testTime},
 			{Labels: map[string]string{"alertname": "DropAlert", "severity": "info"}, State: "firing", ActiveAt: testTime},
 		})
-		mockMapper.GetAlertRelabelConfigSpecFunc = func(rule *monitoringv1.Rule) []osmv1.RelabelConfig {
-			if rule.Alert == "DropAlert" {
-				return []osmv1.RelabelConfig{{Action: "Drop"}}
+		mockK8s.AlertRelabelConfigsFunc = func() k8s.AlertRelabelConfigInterface {
+			return &testutils.MockAlertRelabelConfigInterface{
+				GetRelabelConfigsFunc: func(ctx context.Context) ([]*relabel.Config, error) {
+					sourceLabels := []model.LabelName{"alertname"}
+					regex := relabel.MustNewRegexp("DropAlert")
+					nameValidationScheme := model.ValidationScheme(model.UTF8Validation)
+
+					return []*relabel.Config{
+						{SourceLabels: sourceLabels, Regex: regex, Action: relabel.Drop, NameValidationScheme: nameValidationScheme},
+					}, nil
+				},
 			}
-			return nil
 		}
 
 		result, err := client.GetAlerts(ctx, k8s.GetAlertsRequest{})
@@ -112,8 +133,18 @@ var _ = Describe("GetAlerts", func() {
 		mockAlerts.SetActiveAlerts([]k8s.PrometheusAlert{
 			{Labels: map[string]string{"alertname": "TestAlert", "severity": "warning"}, State: "firing", ActiveAt: testTime},
 		})
-		mockMapper.GetAlertRelabelConfigSpecFunc = func(*monitoringv1.Rule) []osmv1.RelabelConfig {
-			return []osmv1.RelabelConfig{{TargetLabel: "team", Replacement: "infra", Action: "Replace"}}
+		mockK8s.AlertRelabelConfigsFunc = func() k8s.AlertRelabelConfigInterface {
+			return &testutils.MockAlertRelabelConfigInterface{
+				GetRelabelConfigsFunc: func(ctx context.Context) ([]*relabel.Config, error) {
+					sourceLabels := []model.LabelName{"alertname"}
+					regex := relabel.MustNewRegexp("TestAlert")
+					nameValidationScheme := model.ValidationScheme(model.UTF8Validation)
+
+					return []*relabel.Config{
+						{SourceLabels: sourceLabels, Regex: regex, TargetLabel: "team", Replacement: "infra", Action: relabel.Replace, NameValidationScheme: nameValidationScheme},
+					}, nil
+				},
+			}
 		}
 		result, err := client.GetAlerts(ctx, k8s.GetAlertsRequest{})
 		Expect(err).ToNot(HaveOccurred())

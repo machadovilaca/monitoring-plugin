@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/openshift/monitoring-plugin/pkg/management/mapper"
@@ -53,13 +55,16 @@ func (c *client) GetRuleById(ctx context.Context, alertRuleId string) (monitorin
 }
 
 func (c *client) updateRuleBasedOnRelabelConfig(rule *monitoringv1.Rule) (monitoringv1.Rule, error) {
-	configs := c.mapper.GetAlertRelabelConfigSpec(rule)
-
-	updatedLabels, err := applyRelabelConfigs(string(rule.Alert), rule.Labels, configs)
+	configs, err := c.k8sClient.AlertRelabelConfigs().GetRelabelConfigs(context.Background())
 	if err != nil {
 		return monitoringv1.Rule{}, err
 	}
 
-	rule.Labels = updatedLabels
+	relabels, keep := relabel.Process(labels.FromMap(rule.Labels), configs...)
+	if !keep {
+		return monitoringv1.Rule{}, nil
+	}
+
+	rule.Labels = relabels.Map()
 	return *rule, nil
 }
