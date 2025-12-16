@@ -425,4 +425,3 @@ var _ = Describe("UpdateUserDefinedAlertRule", func() {
 		})
 	})
 })
-

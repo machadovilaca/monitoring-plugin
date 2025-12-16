@@ -449,4 +449,3 @@ var _ = Describe("DeleteUserDefinedAlertRuleById", func() {
 		})
 	})
 })
-

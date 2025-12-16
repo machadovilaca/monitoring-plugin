@@ -66,7 +66,7 @@ func (c *client) DeleteUserDefinedAlertRuleById(ctx context.Context, alertRuleId
 		return nil
 	}
 
-	return &NotFoundError{Resource: "AlertRule", Id: alertRuleId}
+	return &NotFoundError{Resource: "AlertRule", Id: alertRuleId, AdditionalInfo: "rule not found in the given PrometheusRule"}
 }
 
 func (c *client) filterRulesById(rules []monitoringv1.Rule, alertRuleId string, updated *bool) []monitoringv1.Rule {

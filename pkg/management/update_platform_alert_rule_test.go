@@ -383,4 +383,3 @@ var _ = Describe("UpdatePlatformAlertRule", func() {
 		})
 	})
 })
-

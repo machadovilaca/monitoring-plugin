@@ -125,8 +125,6 @@ var _ = Describe("GetAlerts", func() {
 			})
 		})
 
-
-
 		Context("when no alerts are returned from Prometheus", func() {
 			BeforeEach(func() {
 				mockK8s.PrometheusAlertsFunc = func() k8s.PrometheusAlertsInterface {
@@ -155,4 +153,3 @@ var _ = Describe("GetAlerts", func() {
 		})
 	})
 })
-

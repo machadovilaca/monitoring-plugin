@@ -30,6 +30,11 @@ func GetAlertingRuleId(alertRule *monitoringv1.Rule) string {
 	var sortedLabels []string
 	if alertRule.Labels != nil {
 		for key, value := range alertRule.Labels {
+			if strings.HasPrefix(key, "openshift_io_") || key == "alertname" {
+				// Skip system labels
+				continue
+			}
+
 			sortedLabels = append(sortedLabels, fmt.Sprintf("%s=%s", key, value))
 		}
 		sort.Strings(sortedLabels)

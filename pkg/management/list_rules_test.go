@@ -280,4 +280,3 @@ var _ = Describe("ListRules", func() {
 		})
 	})
 })
-

@@ -6,6 +6,7 @@ import (
 
 	osmv1 "github.com/openshift/api/monitoring/v1"
 	osmv1client "github.com/openshift/client-go/monitoring/clientset/versioned"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/tools/cache"
@@ -58,17 +59,13 @@ func (arcm *alertRelabelConfigManager) List(ctx context.Context, namespace strin
 }
 
 func (arcm *alertRelabelConfigManager) Get(ctx context.Context, namespace string, name string) (*osmv1.AlertRelabelConfig, bool, error) {
-	item, exists, err := arcm.arcInformer.GetStore().GetByKey(namespace + "/" + name)
+	arc, err := arcm.clientset.MonitoringV1().AlertRelabelConfigs(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		return nil, false, err
-	}
-	if !exists {
-		return nil, false, nil
-	}
+		if errors.IsNotFound(err) {
+			return nil, false, nil
+		}
 
-	arc, ok := item.(*osmv1.AlertRelabelConfig)
-	if !ok {
-		return nil, false, nil
+		return nil, false, err
 	}
 
 	return arc, true, nil

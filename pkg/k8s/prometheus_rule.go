@@ -58,17 +58,13 @@ func (prm *prometheusRuleManager) List(ctx context.Context, namespace string) ([
 }
 
 func (prm *prometheusRuleManager) Get(ctx context.Context, namespace string, name string) (*monitoringv1.PrometheusRule, bool, error) {
-	item, exists, err := prm.informer.GetStore().GetByKey(namespace + "/" + name)
+	pr, err := prm.clientset.MonitoringV1().PrometheusRules(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		return nil, false, err
-	}
-	if !exists {
-		return nil, false, nil
-	}
+		if errors.IsNotFound(err) {
+			return nil, false, nil
+		}
 
-	pr, ok := item.(*monitoringv1.PrometheusRule)
-	if !ok {
-		return nil, false, nil
+		return nil, false, err
 	}
 
 	return pr, true, nil

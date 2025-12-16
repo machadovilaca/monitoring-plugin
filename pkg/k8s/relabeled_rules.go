@@ -169,7 +169,6 @@ func newRelabeledRulesManager(ctx context.Context, namespaceManager NamespaceInt
 
 	go rrm.worker(ctx)
 	rrm.queue.Add("initial-sync")
-	<-ctx.Done()
 
 	return rrm, nil
 }
@@ -336,6 +335,8 @@ func (rrm *relabeledRulesManager) collectAlerts(relabelConfigs []*relabel.Config
 					continue
 				}
 
+				alertRuleId := alertrule.GetAlertingRuleId(&rule)
+
 				if rule.Labels == nil {
 					rule.Labels = make(map[string]string)
 				}
@@ -365,7 +366,6 @@ func (rrm *relabeledRulesManager) collectAlerts(relabelConfigs []*relabel.Config
 					rule.Labels = relabeledLabels.Map()
 				}
 
-				alertRuleId := alertrule.GetAlertingRuleId(&rule)
 				rule.Labels[AlertRuleLabelId] = alertRuleId
 				rule.Labels[PrometheusRuleLabelNamespace] = promRule.Namespace
 				rule.Labels[PrometheusRuleLabelName] = promRule.Name
