@@ -6,24 +6,44 @@ import (
 
 	osmv1 "github.com/openshift/api/monitoring/v1"
 	osmv1client "github.com/openshift/client-go/monitoring/clientset/versioned"
-	"github.com/prometheus/prometheus/model/relabel"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/client-go/tools/cache"
 )
 
 type alertRelabelConfigManager struct {
-	clientset                  *osmv1client.Clientset
-	alertRelabelConfigInformer *alertRelabelConfigInformer
+	clientset   *osmv1client.Clientset
+	arcInformer cache.SharedIndexInformer
 }
 
-func newAlertRelabelConfigManager(clientset *osmv1client.Clientset, informer *alertRelabelConfigInformer) *alertRelabelConfigManager {
-	return &alertRelabelConfigManager{
-		clientset:                  clientset,
-		alertRelabelConfigInformer: informer,
+func newAlertRelabelConfigManager(ctx context.Context, clientset *osmv1client.Clientset) (*alertRelabelConfigManager, error) {
+	arcInformer := cache.NewSharedIndexInformer(
+		alertRelabelConfigListWatchForAllNamespaces(clientset),
+		&osmv1.AlertRelabelConfig{},
+		0,
+		cache.Indexers{},
+	)
+
+	arcm := &alertRelabelConfigManager{
+		clientset:   clientset,
+		arcInformer: arcInformer,
 	}
+
+	go arcm.arcInformer.Run(ctx.Done())
+
+	cache.WaitForNamedCacheSync("AlertRelabelConfig informer", ctx.Done(),
+		arcm.arcInformer.HasSynced,
+	)
+
+	return arcm, nil
+}
+
+func alertRelabelConfigListWatchForAllNamespaces(clientset *osmv1client.Clientset) *cache.ListWatch {
+	return cache.NewListWatchFromClient(clientset.MonitoringV1().RESTClient(), "alertrelabelconfigs", "", fields.Everything())
 }
 
 func (arcm *alertRelabelConfigManager) List(ctx context.Context, namespace string) ([]osmv1.AlertRelabelConfig, error) {
-	arcs := arcm.alertRelabelConfigInformer.arcInformer.GetStore().List()
+	arcs := arcm.arcInformer.GetStore().List()
 
 	alertRelabelConfigs := make([]osmv1.AlertRelabelConfig, 0, len(arcs))
 	for _, item := range arcs {
@@ -38,7 +58,7 @@ func (arcm *alertRelabelConfigManager) List(ctx context.Context, namespace strin
 }
 
 func (arcm *alertRelabelConfigManager) Get(ctx context.Context, namespace string, name string) (*osmv1.AlertRelabelConfig, bool, error) {
-	item, exists, err := arcm.alertRelabelConfigInformer.arcInformer.GetStore().GetByKey(namespace + "/" + name)
+	item, exists, err := arcm.arcInformer.GetStore().GetByKey(namespace + "/" + name)
 	if err != nil {
 		return nil, false, err
 	}
@@ -79,8 +99,4 @@ func (arcm *alertRelabelConfigManager) Delete(ctx context.Context, namespace str
 	}
 
 	return nil
-}
-
-func (arcm *alertRelabelConfigManager) GetRelabelConfigs(ctx context.Context) ([]*relabel.Config, error) {
-	return arcm.alertRelabelConfigInformer.configs, nil
 }

@@ -16,10 +16,7 @@ func (c *client) GetAlerts(ctx context.Context, req k8s.GetAlertsRequest) ([]k8s
 		return nil, fmt.Errorf("failed to get prometheus alerts: %w", err)
 	}
 
-	configs, err := c.k8sClient.AlertRelabelConfigs().GetRelabelConfigs(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get relabel configs: %w", err)
-	}
+	configs := c.k8sClient.RelabeledRules().Config()
 
 	var result []k8s.PrometheusAlert
 	for _, alert := range alerts {

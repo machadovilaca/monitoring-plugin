@@ -9,7 +9,10 @@ import (
 
 	osmv1client "github.com/openshift/client-go/monitoring/clientset/versioned"
 	monitoringv1client "github.com/prometheus-operator/prometheus-operator/pkg/client/versioned"
+	"github.com/sirupsen/logrus"
 )
+
+var log = logrus.WithField("module", "k8s")
 
 var _ Client = (*client)(nil)
 
@@ -21,14 +24,10 @@ type client struct {
 
 	prometheusAlerts *prometheusAlerts
 
-	prometheusRuleManager  *prometheusRuleManager
-	prometheusRuleInformer *prometheusRuleInformer
-
-	alertRelabelConfigManager  *alertRelabelConfigManager
-	alertRelabelConfigInformer *alertRelabelConfigInformer
-
-	namespaceManager  *namespaceManager
-	namespaceInformer *namespaceInformer
+	prometheusRuleManager     *prometheusRuleManager
+	alertRelabelConfigManager *alertRelabelConfigManager
+	namespaceManager          *namespaceManager
+	relabeledRulesManager     *relabeledRulesManager
 }
 
 func newClient(ctx context.Context, config *rest.Config) (Client, error) {
@@ -56,26 +55,22 @@ func newClient(ctx context.Context, config *rest.Config) (Client, error) {
 
 	c.prometheusAlerts = newPrometheusAlerts(clientset, config)
 
-	pri, err := newPrometheusRuleInformer(ctx, monitoringv1clientset)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create prometheus rule informer: %w", err)
-	}
-	c.prometheusRuleInformer = pri
-	c.prometheusRuleManager = newPrometheusRuleManager(monitoringv1clientset, c.prometheusRuleInformer)
+	c.prometheusRuleManager = newPrometheusRuleManager(ctx, monitoringv1clientset)
 
-	arci, err := newAlertRelabelConfigInformer(ctx, osmv1clientset)
+	c.alertRelabelConfigManager, err = newAlertRelabelConfigManager(ctx, osmv1clientset)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create alert relabel config informer: %w", err)
+		return nil, fmt.Errorf("failed to create alert relabel config manager: %w", err)
 	}
-	c.alertRelabelConfigInformer = arci
-	c.alertRelabelConfigManager = newAlertRelabelConfigManager(osmv1clientset, arci)
 
-	ni, err := newNamespaceInformer(ctx, clientset)
+	c.namespaceManager, err = newNamespaceManager(ctx, clientset)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create namespace informer: %w", err)
+		return nil, fmt.Errorf("failed to create namespace manager: %w", err)
 	}
-	c.namespaceInformer = ni
-	c.namespaceManager = newNamespaceManager(ni)
+
+	c.relabeledRulesManager, err = newRelabeledRulesManager(ctx, c.namespaceManager, monitoringv1clientset, clientset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create relabeled rules config manager: %w", err)
+	}
 
 	return c, nil
 }
@@ -96,12 +91,12 @@ func (c *client) PrometheusRules() PrometheusRuleInterface {
 	return c.prometheusRuleManager
 }
 
-func (c *client) PrometheusRuleInformer() PrometheusRuleInformerInterface {
-	return c.prometheusRuleInformer
-}
-
 func (c *client) AlertRelabelConfigs() AlertRelabelConfigInterface {
 	return c.alertRelabelConfigManager
+}
+
+func (c *client) RelabeledRules() RelabeledRulesInterface {
+	return c.relabeledRulesManager
 }
 
 func (c *client) Namespace() NamespaceInterface {

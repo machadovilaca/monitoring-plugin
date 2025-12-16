@@ -7,7 +7,6 @@ import (
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/prometheus/prometheus/model/relabel"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/cache"
 )
 
 // ClientOptions holds configuration options for creating a Kubernetes client
@@ -28,11 +27,11 @@ type Client interface {
 	// PrometheusRules returns the PrometheusRule interface
 	PrometheusRules() PrometheusRuleInterface
 
-	// PrometheusRuleInformer returns the PrometheusRuleInformer interface
-	PrometheusRuleInformer() PrometheusRuleInformerInterface
-
 	// AlertRelabelConfigs returns the AlertRelabelConfig interface
 	AlertRelabelConfigs() AlertRelabelConfigInterface
+
+	// RelabeledRules returns the RelabeledRules interface
+	RelabeledRules() RelabeledRulesInterface
 
 	// Namespace returns the Namespace interface
 	Namespace() NamespaceInterface
@@ -62,24 +61,6 @@ type PrometheusRuleInterface interface {
 	AddRule(ctx context.Context, namespacedName types.NamespacedName, groupName string, rule monitoringv1.Rule) error
 }
 
-// PrometheusRuleInformerInterface defines operations for PrometheusRules informers
-type PrometheusRuleInformerInterface interface {
-	// AddCallbacks adds the provided callbacks for add, update, and delete events
-	AddCallbacks(callbacks PrometheusRuleInformerCallback) error
-}
-
-// PrometheusRuleInformerCallback holds the callback functions for informer events
-type PrometheusRuleInformerCallback struct {
-	// OnAdd is called when a new PrometheusRule is added
-	OnAdd func(pr *monitoringv1.PrometheusRule)
-
-	// OnUpdate is called when an existing PrometheusRule is updated
-	OnUpdate func(pr *monitoringv1.PrometheusRule)
-
-	// OnDelete is called when a PrometheusRule is deleted
-	OnDelete func(key cache.ObjectName)
-}
-
 // AlertRelabelConfigInterface defines operations for managing AlertRelabelConfigs
 type AlertRelabelConfigInterface interface {
 	// List lists all AlertRelabelConfigs in the cluster
@@ -96,9 +77,18 @@ type AlertRelabelConfigInterface interface {
 
 	// Delete deletes an AlertRelabelConfig by namespace and name
 	Delete(ctx context.Context, namespace string, name string) error
+}
 
-	// GetRelabelConfigs retrieves the relabel configs for an AlertRelabelConfig
-	GetRelabelConfigs(ctx context.Context) ([]*relabel.Config, error)
+// RelabeledRulesInterface defines operations for managing relabeled rules
+type RelabeledRulesInterface interface {
+	// List retrieves the relabeled rules for a given PrometheusRule
+	List(ctx context.Context) []monitoringv1.Rule
+
+	// Get retrieves the relabeled rule for a given id
+	Get(ctx context.Context, id string) (monitoringv1.Rule, bool)
+
+	// Config returns the list of alert relabel configs
+	Config() []*relabel.Config
 }
 
 // NamespaceInterface defines operations for Namespaces

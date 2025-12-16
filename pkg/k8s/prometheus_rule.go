@@ -8,32 +8,57 @@ import (
 	monitoringv1client "github.com/prometheus-operator/prometheus-operator/pkg/client/versioned"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/cache"
 )
 
 type prometheusRuleManager struct {
-	clientset              *monitoringv1client.Clientset
-	prometheusRuleInformer *prometheusRuleInformer
+	clientset *monitoringv1client.Clientset
+	informer  cache.SharedIndexInformer
 }
 
-func newPrometheusRuleManager(clientset *monitoringv1client.Clientset, informer *prometheusRuleInformer) *prometheusRuleManager {
+func newPrometheusRuleManager(ctx context.Context, clientset *monitoringv1client.Clientset) *prometheusRuleManager {
+	informer := cache.NewSharedIndexInformer(
+		prometheusRuleListWatchForAllNamespaces(clientset),
+		&monitoringv1.PrometheusRule{},
+		0,
+		cache.Indexers{},
+	)
+
+	go informer.Run(ctx.Done())
+
+	cache.WaitForNamedCacheSync("PrometheusRule informer", ctx.Done(),
+		informer.HasSynced,
+	)
+
 	return &prometheusRuleManager{
-		clientset:              clientset,
-		prometheusRuleInformer: informer,
+		clientset: clientset,
+		informer:  informer,
 	}
+}
+
+func prometheusRuleListWatchForAllNamespaces(clientset *monitoringv1client.Clientset) *cache.ListWatch {
+	return cache.NewListWatchFromClient(clientset.MonitoringV1().RESTClient(), "prometheusrules", "", fields.Everything())
 }
 
 func (prm *prometheusRuleManager) List(ctx context.Context, namespace string) ([]monitoringv1.PrometheusRule, error) {
-	prs, err := prm.clientset.MonitoringV1().PrometheusRules(namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
+	prs := prm.informer.GetStore().List()
+
+	prometheusRules := make([]monitoringv1.PrometheusRule, 0, len(prs))
+	for _, item := range prs {
+		pr, ok := item.(*monitoringv1.PrometheusRule)
+		if !ok {
+			continue
+		}
+		prometheusRules = append(prometheusRules, *pr)
 	}
 
-	return prs.Items, nil
+	return prometheusRules, nil
 }
 
 func (prm *prometheusRuleManager) Get(ctx context.Context, namespace string, name string) (*monitoringv1.PrometheusRule, bool, error) {
-	item, exists, err := prm.prometheusRuleInformer.informer.GetStore().GetByKey(namespace + "/" + name)
+	item, exists, err := prm.informer.GetStore().GetByKey(namespace + "/" + name)
 	if err != nil {
 		return nil, false, err
 	}

@@ -14,12 +14,12 @@ import (
 
 // MockClient is a mock implementation of k8s.Client interface
 type MockClient struct {
-	TestConnectionFunc         func(ctx context.Context) error
-	PrometheusAlertsFunc       func() k8s.PrometheusAlertsInterface
-	PrometheusRulesFunc        func() k8s.PrometheusRuleInterface
-	PrometheusRuleInformerFunc func() k8s.PrometheusRuleInformerInterface
-	AlertRelabelConfigsFunc    func() k8s.AlertRelabelConfigInterface
-	NamespaceFunc              func() k8s.NamespaceInterface
+	TestConnectionFunc      func(ctx context.Context) error
+	PrometheusAlertsFunc    func() k8s.PrometheusAlertsInterface
+	PrometheusRulesFunc     func() k8s.PrometheusRuleInterface
+	AlertRelabelConfigsFunc func() k8s.AlertRelabelConfigInterface
+	RelabeledRulesFunc      func() k8s.RelabeledRulesInterface
+	NamespaceFunc           func() k8s.NamespaceInterface
 }
 
 // TestConnection mocks the TestConnection method
@@ -46,20 +46,20 @@ func (m *MockClient) PrometheusRules() k8s.PrometheusRuleInterface {
 	return &MockPrometheusRuleInterface{}
 }
 
-// PrometheusRuleInformer mocks the PrometheusRuleInformer method
-func (m *MockClient) PrometheusRuleInformer() k8s.PrometheusRuleInformerInterface {
-	if m.PrometheusRuleInformerFunc != nil {
-		return m.PrometheusRuleInformerFunc()
-	}
-	return &MockPrometheusRuleInformerInterface{}
-}
-
 // AlertRelabelConfigs mocks the AlertRelabelConfigs method
 func (m *MockClient) AlertRelabelConfigs() k8s.AlertRelabelConfigInterface {
 	if m.AlertRelabelConfigsFunc != nil {
 		return m.AlertRelabelConfigsFunc()
 	}
 	return &MockAlertRelabelConfigInterface{}
+}
+
+// RelabeledRules mocks the RelabeledRules method
+func (m *MockClient) RelabeledRules() k8s.RelabeledRulesInterface {
+	if m.RelabeledRulesFunc != nil {
+		return m.RelabeledRulesFunc()
+	}
+	return &MockRelabeledRulesInterface{}
 }
 
 // Namespace mocks the Namespace method
@@ -216,34 +216,13 @@ func (m *MockPrometheusRuleInterface) AddRule(ctx context.Context, namespacedNam
 	return nil
 }
 
-// MockPrometheusRuleInformerInterface is a mock implementation of k8s.PrometheusRuleInformerInterface
-type MockPrometheusRuleInformerInterface struct {
-	AddCallbacksFunc func(callbacks k8s.PrometheusRuleInformerCallback) error
-
-	// Storage for test data
-	PrometheusRules map[string]*monitoringv1.PrometheusRule
-}
-
-func (m *MockPrometheusRuleInformerInterface) SetPrometheusRules(rules map[string]*monitoringv1.PrometheusRule) {
-	m.PrometheusRules = rules
-}
-
-// Run mocks the Run method
-func (m *MockPrometheusRuleInformerInterface) AddCallbacks(callbacks k8s.PrometheusRuleInformerCallback) error {
-	if m.AddCallbacksFunc != nil {
-		return m.AddCallbacksFunc(callbacks)
-	}
-	return nil
-}
-
 // MockAlertRelabelConfigInterface is a mock implementation of k8s.AlertRelabelConfigInterface
 type MockAlertRelabelConfigInterface struct {
-	ListFunc              func(ctx context.Context, namespace string) ([]osmv1.AlertRelabelConfig, error)
-	GetFunc               func(ctx context.Context, namespace string, name string) (*osmv1.AlertRelabelConfig, bool, error)
-	CreateFunc            func(ctx context.Context, arc osmv1.AlertRelabelConfig) (*osmv1.AlertRelabelConfig, error)
-	UpdateFunc            func(ctx context.Context, arc osmv1.AlertRelabelConfig) error
-	DeleteFunc            func(ctx context.Context, namespace string, name string) error
-	GetRelabelConfigsFunc func(ctx context.Context) ([]*relabel.Config, error)
+	ListFunc   func(ctx context.Context, namespace string) ([]osmv1.AlertRelabelConfig, error)
+	GetFunc    func(ctx context.Context, namespace string, name string) (*osmv1.AlertRelabelConfig, bool, error)
+	CreateFunc func(ctx context.Context, arc osmv1.AlertRelabelConfig) (*osmv1.AlertRelabelConfig, error)
+	UpdateFunc func(ctx context.Context, arc osmv1.AlertRelabelConfig) error
+	DeleteFunc func(ctx context.Context, namespace string, name string) error
 
 	// Storage for test data
 	AlertRelabelConfigs map[string]*osmv1.AlertRelabelConfig
@@ -327,12 +306,32 @@ func (m *MockAlertRelabelConfigInterface) Delete(ctx context.Context, namespace 
 	return nil
 }
 
-// GetRelabelConfigs mocks the GetRelabelConfigs method
-func (m *MockAlertRelabelConfigInterface) GetRelabelConfigs(ctx context.Context) ([]*relabel.Config, error) {
-	if m.GetRelabelConfigsFunc != nil {
-		return m.GetRelabelConfigsFunc(ctx)
+// MockRelabeledRulesInterface is a mock implementation of k8s.RelabeledRulesInterface
+type MockRelabeledRulesInterface struct {
+	ListFunc   func(ctx context.Context) []monitoringv1.Rule
+	GetFunc    func(ctx context.Context, id string) (monitoringv1.Rule, bool)
+	ConfigFunc func() []*relabel.Config
+}
+
+func (m *MockRelabeledRulesInterface) List(ctx context.Context) []monitoringv1.Rule {
+	if m.ListFunc != nil {
+		return m.ListFunc(ctx)
 	}
-	return nil, nil
+	return []monitoringv1.Rule{}
+}
+
+func (m *MockRelabeledRulesInterface) Get(ctx context.Context, id string) (monitoringv1.Rule, bool) {
+	if m.GetFunc != nil {
+		return m.GetFunc(ctx, id)
+	}
+	return monitoringv1.Rule{}, false
+}
+
+func (m *MockRelabeledRulesInterface) Config() []*relabel.Config {
+	if m.ConfigFunc != nil {
+		return m.ConfigFunc()
+	}
+	return []*relabel.Config{}
 }
 
 // MockNamespaceInterface is a mock implementation of k8s.NamespaceInterface
