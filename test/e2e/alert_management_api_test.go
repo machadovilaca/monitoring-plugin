@@ -168,8 +168,6 @@ func TestBulkDeleteUserDefinedAlertRules(t *testing.T) {
 		}
 	}
 
-	time.Sleep(2 * time.Second)
-
 	promRule, err := f.Monitoringv1clientset.MonitoringV1().PrometheusRules(testNamespace).Get(
 		ctx,
 		"test-prometheus-rule",
@@ -198,4 +196,139 @@ func TestBulkDeleteUserDefinedAlertRules(t *testing.T) {
 	}
 
 	t.Log("Bulk delete test completed successfully - only TestBulkDeleteAlert3 remains")
+}
+
+func TestDeleteUserDefinedAlertRuleById(t *testing.T) {
+	f, err := framework.New()
+	if err != nil {
+		t.Fatalf("Failed to create framework: %v", err)
+	}
+
+	ctx := context.Background()
+
+	testNamespace, cleanup, err := f.CreateNamespace(ctx, "test-delete-by-id", false)
+	if err != nil {
+		t.Fatalf("Failed to create test namespace: %v", err)
+	}
+	defer cleanup()
+
+	forDuration := monitoringv1.Duration("5m")
+
+	testRule1 := monitoringv1.Rule{
+		Alert: "TestDeleteByIdAlert1",
+		Expr:  intstr.FromString("up == 0"),
+		For:   &forDuration,
+		Labels: map[string]string{
+			"severity": "warning",
+		},
+		Annotations: map[string]string{
+			"description": "Test alert 1 for delete by id testing",
+		},
+	}
+
+	testRule2 := monitoringv1.Rule{
+		Alert: "TestDeleteByIdAlert2",
+		Expr:  intstr.FromString("up == 1"),
+		For:   &forDuration,
+		Labels: map[string]string{
+			"severity": "info",
+		},
+		Annotations: map[string]string{
+			"description": "Test alert 2 for delete by id testing",
+		},
+	}
+
+	_, err = createPrometheusRule(ctx, f, testNamespace, testRule1, testRule2)
+	if err != nil {
+		t.Fatalf("Failed to create PrometheusRule: %v", err)
+	}
+
+	var ruleIdToDelete string
+	err = wait.PollUntilContextTimeout(ctx, 2*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+		cm, err := f.Clientset.CoreV1().ConfigMaps(k8s.ClusterMonitoringNamespace).Get(
+			ctx,
+			k8s.RelabeledRulesConfigMapName,
+			metav1.GetOptions{},
+		)
+		if err != nil {
+			t.Logf("Failed to get ConfigMap: %v", err)
+			return false, nil
+		}
+
+		configData, ok := cm.Data[k8s.RelabeledRulesConfigMapKey]
+		if !ok {
+			t.Logf("ConfigMap has no %s key", k8s.RelabeledRulesConfigMapKey)
+			return false, nil
+		}
+
+		var rules map[string]monitoringv1.Rule
+		if err := yaml.Unmarshal([]byte(configData), &rules); err != nil {
+			t.Logf("Failed to unmarshal config data: %v", err)
+			return false, nil
+		}
+
+		for ruleId, rule := range rules {
+			if rule.Alert == "TestDeleteByIdAlert1" {
+				ruleIdToDelete = ruleId
+				t.Logf("Found rule ID to delete: %s", ruleIdToDelete)
+				return true, nil
+			}
+		}
+
+		t.Logf("Test alert not found yet in ConfigMap")
+		return false, nil
+	})
+
+	if err != nil {
+		t.Fatalf("Timeout waiting for alerts to appear in ConfigMap: %v", err)
+	}
+
+	deleteURL := fmt.Sprintf("%s/api/v1/alerting/rules/%s", f.PluginURL, ruleIdToDelete)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, deleteURL, nil)
+	if err != nil {
+		t.Fatalf("Failed to create HTTP request: %v", err)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("Failed to make delete request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("Expected status code %d, got %d. Response body: %s", http.StatusNoContent, resp.StatusCode, string(body))
+	}
+
+	t.Logf("Rule %s deleted successfully", ruleIdToDelete)
+
+	promRule, err := f.Monitoringv1clientset.MonitoringV1().PrometheusRules(testNamespace).Get(
+		ctx,
+		"test-prometheus-rule",
+		metav1.GetOptions{},
+	)
+	if err != nil {
+		t.Fatalf("Failed to get PrometheusRule after deletion: %v", err)
+	}
+
+	if len(promRule.Spec.Groups) != 1 {
+		t.Fatalf("Expected 1 rule group, got %d", len(promRule.Spec.Groups))
+	}
+
+	ruleGroup := promRule.Spec.Groups[0]
+	if len(ruleGroup.Rules) != 1 {
+		t.Fatalf("Expected 1 rule remaining, got %d: %+v", len(ruleGroup.Rules), ruleGroup.Rules)
+	}
+
+	remainingRule := ruleGroup.Rules[0]
+	if remainingRule.Alert != "TestDeleteByIdAlert2" {
+		t.Errorf("Expected remaining rule to be TestDeleteByIdAlert2, got %s", remainingRule.Alert)
+	}
+
+	if remainingRule.Labels["severity"] != "info" {
+		t.Errorf("Expected severity=info, got %s", remainingRule.Labels["severity"])
+	}
+
+	t.Log("Delete by ID test completed successfully - only TestDeleteByIdAlert2 remains")
 }

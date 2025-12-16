@@ -27,7 +27,7 @@ func (c *client) UpdatePlatformAlertRule(ctx context.Context, alertRuleId string
 		return errors.New("cannot update non-platform alert rule from " + namespace + "/" + name)
 	}
 
-	originalRule, err := c.getOriginalPlatformRule(ctx, namespace, name, rule.Labels[k8s.AlertRuleLabelId])
+	originalRule, err := c.getOriginalPlatformRule(ctx, namespace, name, alertRuleId)
 	if err != nil {
 		return err
 	}
@@ -102,7 +102,7 @@ func calculateLabelChanges(originalLabels, newLabels map[string]string) []labelC
 }
 
 func (c *client) applyLabelChangesViaAlertRelabelConfig(ctx context.Context, namespace string, alertRuleId string, alertName string, changes []labelChange) error {
-	arcName := fmt.Sprintf("alertmanagement-%s", strings.ToLower(strings.ReplaceAll(alertRuleId, "/", "-")))
+	arcName := fmt.Sprintf("alertmanagement-%s", strings.ToLower(strings.ReplaceAll(alertRuleId, ";", "-")))
 
 	existingArc, found, err := c.k8sClient.AlertRelabelConfigs().Get(ctx, namespace, arcName)
 	if err != nil {

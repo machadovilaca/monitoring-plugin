@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/kubernetes"
@@ -161,10 +162,12 @@ func newRelabeledRulesManager(ctx context.Context, namespaceManager NamespaceInt
 
 	go rrm.prometheusRulesInformer.Run(ctx.Done())
 	go rrm.secretInformer.Run(ctx.Done())
+	go rrm.configMapInformer.Run(ctx.Done())
 
 	cache.WaitForNamedCacheSync("RelabeledRulesConfig informer", ctx.Done(),
 		rrm.prometheusRulesInformer.HasSynced,
 		rrm.secretInformer.HasSynced,
+		rrm.configMapInformer.HasSynced,
 	)
 
 	go rrm.worker(ctx)
@@ -254,7 +257,9 @@ func (rrm *relabeledRulesManager) reapplyConfigMap(ctx context.Context) error {
 	configMapClient := rrm.clientset.CoreV1().ConfigMaps(ClusterMonitoringNamespace)
 
 	if err := configMapClient.Delete(ctx, RelabeledRulesConfigMapName, metav1.DeleteOptions{}); err != nil {
-		return fmt.Errorf("failed to delete config map: %w", err)
+		if !errors.IsNotFound(err) {
+			return fmt.Errorf("failed to delete config map: %w", err)
+		}
 	}
 
 	log.Infof("Creating ConfigMap %s with size %d bytes and %d relabeled rules", RelabeledRulesConfigMapName, len(data), len(rrm.relabeledRules))
@@ -350,16 +355,6 @@ func (rrm *relabeledRulesManager) collectAlerts(relabelConfigs []*relabel.Config
 						// Alert was dropped by relabeling, skip it
 						log.Infof("Skipping dropped alert %s from %s/%s", rule.Alert, promRule.Namespace, promRule.Name)
 						continue
-					}
-
-					if rule.Alert == "TestRelabelAlert" {
-						for _, config := range relabelConfigs {
-							log.Infof("TestRelabelAlert relabel config: %+v", config)
-						}
-
-						log.Infof("TestRelabelAlert Relabeled alert %s from %s/%s with %d relabel configs", rule.Alert, promRule.Namespace, promRule.Name, len(relabelConfigs))
-						log.Infof("TestRelabelAlert Original labels: %v", rule.Labels)
-						log.Infof("TestRelabelAlert Relabeled labels: %v", relabeledLabels.Map())
 					}
 
 					// Update the alert labels
