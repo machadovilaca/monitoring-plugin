@@ -256,30 +256,46 @@ func (rrm *relabeledRulesManager) reapplyConfigMap(ctx context.Context) error {
 
 	configMapClient := rrm.clientset.CoreV1().ConfigMaps(ClusterMonitoringNamespace)
 
-	if err := configMapClient.Delete(ctx, RelabeledRulesConfigMapName, metav1.DeleteOptions{}); err != nil {
-		if !errors.IsNotFound(err) {
-			return fmt.Errorf("failed to delete config map: %w", err)
+	existingConfigMap, err := configMapClient.Get(ctx, RelabeledRulesConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			log.Infof("Creating ConfigMap %s with %d relabeled rules", RelabeledRulesConfigMapName, len(rrm.relabeledRules))
+			newConfigMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      RelabeledRulesConfigMapName,
+					Namespace: ClusterMonitoringNamespace,
+					Labels: map[string]string{
+						AppKubernetesIoManagedBy: AppKubernetesIoComponentMonitoringPlugin,
+						AppKubernetesIoComponent: AppKubernetesIoComponentAlertManagementApi,
+					},
+				},
+				Data: configMapData,
+			}
+
+			if _, err := configMapClient.Create(ctx, newConfigMap, metav1.CreateOptions{}); err != nil {
+				return fmt.Errorf("failed to create config map: %w", err)
+			}
+
+			log.Infof("Successfully created ConfigMap %s", RelabeledRulesConfigMapName)
+			return nil
 		}
+
+		return fmt.Errorf("failed to get config map: %w", err)
 	}
 
-	log.Infof("Creating ConfigMap %s with size %d bytes and %d relabeled rules", RelabeledRulesConfigMapName, len(data), len(rrm.relabeledRules))
-	newConfigMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      RelabeledRulesConfigMapName,
-			Namespace: ClusterMonitoringNamespace,
-			Labels: map[string]string{
-				AppKubernetesIoManagedBy: AppKubernetesIoComponentMonitoringPlugin,
-				AppKubernetesIoComponent: AppKubernetesIoComponentAlertManagementApi,
-			},
-		},
-		Data: configMapData,
+	if existingConfigMap.Data[RelabeledRulesConfigMapKey] == configMapData[RelabeledRulesConfigMapKey] {
+		log.Debugf("ConfigMap %s data unchanged, skipping update", RelabeledRulesConfigMapName)
+		return nil
 	}
 
-	if _, err := configMapClient.Create(ctx, newConfigMap, metav1.CreateOptions{}); err != nil {
-		return fmt.Errorf("failed to create config map: %w", err)
+	log.Infof("Updating ConfigMap %s with %d relabeled rules", RelabeledRulesConfigMapName, len(rrm.relabeledRules))
+	existingConfigMap.Data = configMapData
+
+	if _, err := configMapClient.Update(ctx, existingConfigMap, metav1.UpdateOptions{}); err != nil {
+		return fmt.Errorf("failed to update config map: %w", err)
 	}
 
-	log.Infof("Successfully created ConfigMap %s", RelabeledRulesConfigMapName)
+	log.Infof("Successfully updated ConfigMap %s", RelabeledRulesConfigMapName)
 	return nil
 }
 
