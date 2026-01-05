@@ -2,11 +2,16 @@ package k8s
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"regexp"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	alertrule "github.com/openshift/monitoring-plugin/pkg/alert_rule"
+	"github.com/openshift/monitoring-plugin/pkg/alertcomponent"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	monitoringv1client "github.com/prometheus-operator/prometheus-operator/pkg/client/versioned"
 	"github.com/prometheus/common/model"
@@ -43,7 +48,21 @@ const (
 	AppKubernetesIoManagedBy                   = "app.kubernetes.io/managed-by"
 	AppKubernetesIoComponentAlertManagementApi = "alert-management-api"
 	AppKubernetesIoComponentMonitoringPlugin   = "monitoring-plugin"
+
+	// Per-PrometheusRule alert rules classification map (component + layer)
+	AlertRuleClassificationConfigMapNamePrefix = "alertrule-classification-"
+	AlertRuleClassificationConfigMapKey        = "alert-rule-classification.yaml"
+
+	// Additional labels for traceability and rename heuristics
+	PrometheusRuleLabelUID          = "openshift_io_prometheus_rule_uid"
+	ClassificationSignatureLabelKey = "openshift_io_classification_signature"
 )
+
+// alertRuleClassification represents the stored classification for a rule id
+type alertRuleClassification struct {
+	Component string `yaml:"component"`
+	Layer     string `yaml:"layer"`
+}
 
 type relabeledRulesManager struct {
 	queue workqueue.TypedRateLimitingInterface[string]
@@ -52,7 +71,7 @@ type relabeledRulesManager struct {
 	prometheusRulesInformer cache.SharedIndexInformer
 	secretInformer          cache.SharedIndexInformer
 	configMapInformer       cache.SharedIndexInformer
-	clientset               *kubernetes.Clientset
+	clientset               kubernetes.Interface
 
 	// relabeledRules stores the relabeled rules
 	relabeledRules map[string]monitoringv1.Rule
@@ -220,7 +239,10 @@ func (rrm *relabeledRulesManager) processNextWorkItem(ctx context.Context) bool 
 
 func (rrm *relabeledRulesManager) sync(ctx context.Context, key string) error {
 	if key == "config-map-sync" {
-		return rrm.reapplyConfigMap(ctx)
+		if err := rrm.reapplyConfigMap(ctx); err != nil {
+			return err
+		}
+		return rrm.reconcileAlertComponentMaps(ctx)
 	}
 
 	relabelConfigs, err := rrm.loadRelabelConfigs()
@@ -238,7 +260,10 @@ func (rrm *relabeledRulesManager) sync(ctx context.Context, key string) error {
 	rrm.relabeledRules = alerts
 	rrm.mu.Unlock()
 
-	return rrm.reapplyConfigMap(ctx)
+	if err := rrm.reapplyConfigMap(ctx); err != nil {
+		return err
+	}
+	return rrm.reconcileAlertComponentMaps(ctx)
 }
 
 func (rrm *relabeledRulesManager) reapplyConfigMap(ctx context.Context) error {
@@ -419,4 +444,222 @@ func (rrm *relabeledRulesManager) Config() []*relabel.Config {
 	defer rrm.mu.RUnlock()
 
 	return append([]*relabel.Config{}, rrm.relabelConfigs...)
+}
+
+// reconcileAlertComponentMaps builds and writes a per-PrometheusRule ConfigMap
+// that maps alert rule IDs to their computed components.
+func (rrm *relabeledRulesManager) reconcileAlertComponentMaps(ctx context.Context) error {
+	for _, obj := range rrm.prometheusRulesInformer.GetStore().List() {
+		promRule, ok := obj.(*monitoringv1.PrometheusRule)
+		if !ok {
+			continue
+		}
+		// Skip deleted rules
+		if promRule.DeletionTimestamp != nil {
+			continue
+		}
+
+		alertIdToClassification := make(map[string]alertRuleClassification)
+		alertRulesIds := make([]string, 0, 16)
+
+		for _, group := range promRule.Spec.Groups {
+			for _, rule := range group.Rules {
+				// Only process alerting rules
+				if rule.Alert == "" {
+					continue
+				}
+				// Build label set used for component determination
+				lbls := model.LabelSet{}
+				for k, v := range rule.Labels {
+					lbls[model.LabelName(k)] = model.LabelValue(v)
+				}
+				lbls["alertname"] = model.LabelValue(rule.Alert)
+
+				// Compute component using CHA-compatible logic
+				layer, component := alertcomponent.DetermineComponent(lbls)
+				if component == "" || component == "Others" {
+					// Fallback to PR namespace when unknown; layer intentionally left empty
+					component = promRule.Namespace
+					layer = ""
+				}
+
+				alertRuleId := alertrule.GetAlertingRuleId(&rule)
+				alertIdToClassification[alertRuleId] = alertRuleClassification{
+					Component: component,
+					Layer:     layer,
+				}
+				alertRulesIds = append(alertRulesIds, alertRuleId)
+			}
+		}
+
+		// Write/update the ConfigMap in the same namespace as the PrometheusRule
+		if err := rrm.applyAlertRuleClassificationConfigMap(ctx, promRule, alertIdToClassification, alertRulesIds); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (rrm *relabeledRulesManager) applyAlertRuleClassificationConfigMap(ctx context.Context, promRule *monitoringv1.PrometheusRule, generated map[string]alertRuleClassification, alertRuleIds []string) error {
+	configMapClient := rrm.clientset.CoreV1().ConfigMaps(promRule.Namespace)
+	cmName := AlertRuleClassificationConfigMapNamePrefix + promRule.Name
+
+	// Compute stable signature label based on sorted alertRuleIds
+	signature := computeClassificationSignature(alertRuleIds)
+
+	// Start from generated data, then merge user overrides from existing ConfigMap (if any)
+	merged := make(map[string]alertRuleClassification, len(generated))
+	for k, v := range generated {
+		merged[k] = v
+	}
+
+	// Attempt to load existing ConfigMap to preserve user overrides
+	existing, err := configMapClient.Get(ctx, cmName, metav1.GetOptions{})
+	if err == nil {
+		existingPayload := existing.Data[AlertRuleClassificationConfigMapKey]
+		if existingPayload != "" {
+			var existingMap map[string]alertRuleClassification
+			if err := yaml.Unmarshal([]byte(existingPayload), &existingMap); err != nil {
+				log.Warnf("failed to unmarshal existing classification for %s/%s: %v", promRule.Namespace, cmName, err)
+			} else {
+				// For each id that still exists in generated set, if user provided non-empty override, validate and apply
+				for id, userVal := range existingMap {
+					if _, ok := merged[id]; !ok {
+						// ignore unknown ids (likely removed rules)
+						continue
+					}
+					if userVal.Component != "" {
+						if validateComponent(userVal.Component) {
+							mv := merged[id]
+							mv.Component = userVal.Component
+							merged[id] = mv
+						} else {
+							log.Warnf("invalid component override for %s in %s/%s: %q", id, promRule.Namespace, cmName, userVal.Component)
+						}
+					}
+					// layer can be "", or one of allowed values
+					if userVal.Layer != "" {
+						if validateLayer(userVal.Layer) {
+							mv := merged[id]
+							mv.Layer = userVal.Layer
+							merged[id] = mv
+						} else {
+							log.Warnf("invalid layer override for %s in %s/%s: %q", id, promRule.Namespace, cmName, userVal.Layer)
+						}
+					}
+				}
+			}
+		}
+	} else if !errors.IsNotFound(err) {
+		return fmt.Errorf("failed to get ConfigMap %s/%s: %w", promRule.Namespace, cmName, err)
+	}
+
+	yamlData, err := yaml.Marshal(merged)
+	if err != nil {
+		return fmt.Errorf("failed to marshal alert components map for %s/%s: %w", promRule.Namespace, promRule.Name, err)
+	}
+
+	desired := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      cmName,
+			Namespace: promRule.Namespace,
+			Labels: map[string]string{
+				AppKubernetesIoManagedBy:        AppKubernetesIoComponentMonitoringPlugin,
+				AppKubernetesIoComponent:        AppKubernetesIoComponentAlertManagementApi,
+				PrometheusRuleLabelNamespace:    promRule.Namespace,
+				PrometheusRuleLabelName:         promRule.Name,
+				PrometheusRuleLabelUID:          string(promRule.UID),
+				ClassificationSignatureLabelKey: signature,
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: monitoringv1.SchemeGroupVersion.String(),
+					Kind:       "PrometheusRule",
+					Name:       promRule.Name,
+					UID:        promRule.UID,
+					Controller: boolPtr(true),
+				},
+			},
+		},
+		Data: map[string]string{
+			AlertRuleClassificationConfigMapKey: string(yamlData),
+		},
+	}
+
+	existing, err = configMapClient.Get(ctx, cmName, metav1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			if _, err := configMapClient.Create(ctx, desired, metav1.CreateOptions{}); err != nil {
+				return fmt.Errorf("failed to create ConfigMap %s/%s: %w", promRule.Namespace, cmName, err)
+			}
+			log.Infof("Created ConfigMap %s/%s with alert components map", promRule.Namespace, cmName)
+			return nil
+		}
+		return fmt.Errorf("failed to get ConfigMap %s/%s: %w", promRule.Namespace, cmName, err)
+	}
+
+	// Update if data differs
+	if existing.Data == nil {
+		existing.Data = make(map[string]string)
+	}
+	if existing.Data[AlertRuleClassificationConfigMapKey] == string(yamlData) {
+		return nil
+	}
+	existing.Data[AlertRuleClassificationConfigMapKey] = string(yamlData)
+	// Merge labels, preserving any external labels and updating our managed ones
+	if existing.Labels == nil {
+		existing.Labels = map[string]string{}
+	}
+	existing.Labels[AppKubernetesIoManagedBy] = AppKubernetesIoComponentMonitoringPlugin
+	existing.Labels[AppKubernetesIoComponent] = AppKubernetesIoComponentAlertManagementApi
+	existing.Labels[PrometheusRuleLabelNamespace] = promRule.Namespace
+	existing.Labels[PrometheusRuleLabelName] = promRule.Name
+	existing.Labels[PrometheusRuleLabelUID] = string(promRule.UID)
+	existing.Labels[ClassificationSignatureLabelKey] = signature
+	existing.OwnerReferences = desired.OwnerReferences
+
+	if _, err := configMapClient.Update(ctx, existing, metav1.UpdateOptions{}); err != nil {
+		return fmt.Errorf("failed to update ConfigMap %s/%s: %w", promRule.Namespace, cmName, err)
+	}
+	log.Infof("Updated ConfigMap %s/%s with alert components map", promRule.Namespace, cmName)
+	return nil
+}
+
+func boolPtr(b bool) *bool {
+	return &b
+}
+
+// computeClassificationSignature returns a stable signature for a set of alertRuleIds.
+// It sorts the ids and returns a hex-encoded sha256 hash of the joined list.
+func computeClassificationSignature(ids []string) string {
+	if len(ids) == 0 {
+		return ""
+	}
+	cp := make([]string, len(ids))
+	copy(cp, ids)
+	sort.Strings(cp)
+	h := sha256.Sum256([]byte(strings.Join(cp, "\n")))
+	return fmt.Sprintf("%x", h[:])
+}
+
+var componentRe = regexp.MustCompile(`^[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?$`)
+
+func validateComponent(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	// allow up to 253 chars similar to DNS subdomain length; keep basic safety
+	if len(s) > 253 {
+		return false
+	}
+	return componentRe.MatchString(s)
+}
+
+func validateLayer(s string) bool {
+	switch s {
+	case "cluster", "compute", "namespace", "":
+		return true
+	default:
+		return false
+	}
 }

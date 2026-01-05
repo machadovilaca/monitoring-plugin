@@ -44,6 +44,10 @@ type PrometheusAlert struct {
 	State       string            `json:"state"`
 	ActiveAt    time.Time         `json:"activeAt"`
 	Value       string            `json:"value"`
+	// Optional enrichment populated by management layer
+	Component   string `json:"component,omitempty"`
+	Layer       string `json:"layer,omitempty"`
+	AlertRuleId string `json:"alertRuleId,omitempty"`
 }
 
 type prometheusAlertsResponse struct {
