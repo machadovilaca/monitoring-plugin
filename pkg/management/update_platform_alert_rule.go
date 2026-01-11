@@ -112,38 +112,6 @@ type labelChange struct {
 	value       string
 }
 
-func calculateLabelChanges(originalLabels, newLabels map[string]string) []labelChange {
-	var changes []labelChange
-
-	for key, newValue := range newLabels {
-		originalValue, exists := originalLabels[key]
-		if !exists || originalValue != newValue {
-			changes = append(changes, labelChange{
-				action:      "Replace",
-				targetLabel: key,
-				value:       newValue,
-			})
-		}
-	}
-
-	for key := range originalLabels {
-		// alertname is a special label that is used to identify the alert rule
-		// and should not be dropped
-		if key == "alertname" {
-			continue
-		}
-
-		if _, exists := newLabels[key]; !exists {
-			changes = append(changes, labelChange{
-				action:      "LabelDrop",
-				sourceLabel: key,
-			})
-		}
-	}
-
-	return changes
-}
-
 func (c *client) applyLabelChangesViaAlertRelabelConfig(ctx context.Context, namespace string, alertRuleId string, originalRule monitoringv1.Rule, newLabels map[string]string) error {
 	// Build human-friendly, short ARC name: arc-<prname>-<hash12>
 	relabeled, found := c.k8sClient.RelabeledRules().Get(ctx, alertRuleId)

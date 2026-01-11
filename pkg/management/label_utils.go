@@ -12,11 +12,13 @@ func isProtectedLabel(label string) bool {
 }
 
 // isValidSeverity validates allowed severity values.
+var validSeverities = map[string]bool{
+	"critical": true,
+	"warning":  true,
+	"info":     true,
+	"none":     true,
+}
+
 func isValidSeverity(s string) bool {
-	switch s {
-	case "critical", "warning", "info", "none":
-		return true
-	default:
-		return false
-	}
+	return validSeverities[s]
 }
