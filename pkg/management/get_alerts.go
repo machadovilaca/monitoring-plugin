@@ -34,7 +34,7 @@ func (c *client) GetAlerts(ctx context.Context, req k8s.GetAlertsRequest) ([]k8s
 	rules := c.k8sClient.RelabeledRules().List(ctx)
 	classificationCache := map[string]map[string]alertRuleClassificationOverridePayload{}
 
-	var result []k8s.PrometheusAlert
+	result := make([]k8s.PrometheusAlert, 0, len(alerts))
 	for _, alert := range alerts {
 		// Only apply relabel configs for platform alerts. User workload alerts
 		// already come from their own stack and should not be relabeled here.
@@ -111,6 +111,13 @@ func (c *client) GetAlerts(ctx context.Context, req k8s.GetAlertsRequest) ([]k8s
 
 		alert.AlertComponent = component
 		alert.AlertLayer = layer
+
+		if bestRule != nil && bestRule.Labels != nil {
+			alert.PrometheusRuleNamespace = bestRule.Labels[k8s.PrometheusRuleLabelNamespace]
+			alert.PrometheusRuleName = bestRule.Labels[k8s.PrometheusRuleLabelName]
+			alert.AlertingRuleName = bestRule.Labels[managementlabels.AlertingRuleLabelName]
+		}
+
 		result = append(result, alert)
 	}
 

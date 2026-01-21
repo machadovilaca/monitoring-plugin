@@ -34,6 +34,7 @@ func (m *MockClient) TestConnection(ctx context.Context) error {
 	return nil
 }
 
+// AlertingHealth mocks the AlertingHealth method
 func (m *MockClient) AlertingHealth(ctx context.Context) (k8s.AlertingHealth, error) {
 	if m.AlertingHealthFunc != nil {
 		return m.AlertingHealthFunc(ctx)
@@ -127,6 +128,7 @@ func (m *MockPrometheusAlertsInterface) GetAlerts(ctx context.Context, req k8s.G
 	return []k8s.PrometheusAlert{}, nil
 }
 
+// GetRules mocks the GetRules method
 func (m *MockPrometheusAlertsInterface) GetRules(ctx context.Context, req k8s.GetRulesRequest) ([]k8s.PrometheusRuleGroup, error) {
 	if m.GetRulesFunc != nil {
 		return m.GetRulesFunc(ctx, req)
